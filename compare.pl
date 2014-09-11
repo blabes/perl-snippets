@@ -1,0 +1,90 @@
+#!perl -w
+
+use strict;
+use DBI;
+
+my $usage = "Usage: $0\n";
+
+my $dbh = DBI->connect(
+  "DBI:ODBC:Driver={SQL Server};" .
+  "Server=srazphx76;" .
+  "Database=dwpsa"
+) or die("DBI Connect Error - $DBI::errstr\n");
+
+# Find the region letter for the given division
+my $divSql = qq{
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFA.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFE.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFF.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFM.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFN.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFO.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFR.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFS.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFW.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+UNION ALL
+  SELECT ICREG, LTRIM(ICCOMP) ICCOMP
+    FROM INFOPRO.ALLIED.CUFILE.BIPIC, INFOPRO.ALLIED.BIDBFV.BIPCO
+   WHERE ICCOMP = COCOMP AND ICSTS='A' AND COACTV='1'
+}, undef, ;
+my $divSth = $dbh->prepare($divSql);
+$divSth->execute;
+
+my %icreg;
+while (my ($icreg, $iccomp) = $divSth->fetchrow_array) {
+  $icreg{$iccomp} = $icreg;
+}
+
+$dbh->do("CREATE TABLE #counts(region VARCHAR(5), division VARCHAR(5), date INT, count INT)");
+
+foreach my $div (keys %icreg) {
+  warn "div=$div\n";
+  my $sql = qq{
+    INSERT INTO #counts
+    SELECT '$icreg{$div}' region,
+           '$div' division,
+           t.ASUDAT date,
+           COUNT(*) as cnt
+      FROM infopro.allied.BIDBF$icreg{$div}$div.BIPAS t
+     WHERE t.ASUDAT >= 20100101
+     GROUP
+        BY t.ASUDAT
+  };
+  warn "sql=$sql\n";
+  $dbh->do($sql);
+}
+
+open(OUT, ">compare.csv") or die;
+my $finalSth = $dbh->prepare("SELECT * from #counts ORDER BY 1,2,3");
+$finalSth->execute;
+while (my $row = $finalSth->fetchrow_arrayref) {
+  print OUT join(',', @$row), "\n";
+}
+
+close(OUT);
